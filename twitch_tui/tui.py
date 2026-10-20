@@ -52,6 +52,8 @@ def _fmt_num(n: int) -> str:
 class TwitchApp(App[None]):
     """Dracula & Dynamic Stream Artwork TUI for Twitch."""
 
+    AUTO_FOCUS = None
+
     CSS = """
     Screen {
         background: #1e1f29;
@@ -177,13 +179,17 @@ class TwitchApp(App[None]):
         Binding("a", "listen_audio", "Audio-Only", show=False),
         Binding("x", "stop_stream", "Stop MPV", show=False),
         Binding("p", "toggle_pip", "Toggle PiP", show=False),
+        Binding("P", "toggle_pip", "Toggle PiP", show=False),
         Binding("v", "cycle_quality", "Quality", show=False),
+        Binding("V", "cycle_quality", "Quality", show=False),
         Binding("f", "toggle_follow", "Follow/Unfollow", show=False),
+        Binding("F", "toggle_follow", "Follow/Unfollow", show=False),
         Binding("l", "lurk_chat", "Join Chat", show=False),
         Binding("c", "toggle_chat_panel", "Toggle Chat", show=False),
         Binding("i", "focus_chat_input", "Send Chat", show=False),
         Binding("slash", "open_search", "Search", show=False),
         Binding("u", "start_browser_login", "Twitch Login", show=False),
+        Binding("U", "start_browser_login", "Twitch Login", show=False),
         Binding("A", "open_auth", "Manual Token", show=False),
         Binding("S", "sync_oauth_follows", "Sync Follows", show=False),
         Binding("o", "open_browser", "Browser", show=False),
@@ -243,11 +249,13 @@ class TwitchApp(App[None]):
         yield Input(
             placeholder="🔍 Cerca canale Twitch (Invio per cercare, Esc per chiudere)…",
             id="search-input",
+            disabled=True,
         )
         yield Input(
             placeholder="🔑 Incolla token OAuth Twitch (oppure lascia vuoto per Logout) e premi Invio…",
             id="auth-input",
             password=True,
+            disabled=True,
         )
         with Horizontal(id="workspace"):
             with Vertical(id="list-card"):
@@ -257,10 +265,12 @@ class TwitchApp(App[None]):
                 yield Input(
                     placeholder="💬 Scrivi in chat (Invio per inviare, Esc per annullare)…",
                     id="chat-input",
+                    disabled=True,
                 )
         yield Static(id="help-bar")
 
     def on_mount(self) -> None:
+        self.set_focus(None)
         self._apply_palette(self.palette)
         self._refresh_all_views()
         self.load_initial_data()
@@ -554,7 +564,6 @@ class TwitchApp(App[None]):
         item = self._selected_item()
 
         if isinstance(item, ChannelInfo):
-            # Line 1: Display name + LIVE/OFFLINE badge + Followed star
             info.append(f"{item.display_name}", style=f"bold {pal.fg}")
             info.append(f" (@{item.login})  ", style=pal.fg_muted)
             if item.is_live:
@@ -568,7 +577,6 @@ class TwitchApp(App[None]):
                 info.append("  ★ Following", style="bold #f1fa8c")
             info.append("\n")
 
-            # Line 2: Category / Game
             game_label = item.game_name or ("Live Stream" if item.is_live else "Offline")
             info.append("🎮 ", style=pal.primary)
             info.append(f"{_truncate(game_label, 50)}", style=f"bold {pal.secondary}")
@@ -576,7 +584,6 @@ class TwitchApp(App[None]):
                 info.append(f"   •   👥 {_fmt_num(item.followers_count)} followers", style=pal.fg_muted)
             info.append("\n")
 
-            # Line 3-4: Stream title
             title_str = item.title or item.description or "No broadcast title"
             info.append(f"{_truncate(title_str, 74)}\n", style=pal.fg)
             if len(title_str) > 74:
@@ -602,7 +609,6 @@ class TwitchApp(App[None]):
 
         info.append("─" * 68 + "\n", style=pal.bg_highlight)
 
-        # Line 6: Active MPV Player or Starting Spinner
         pstate = self.client.player.get_state()
         spinner = SPINNER_FRAMES[self._spinner_idx % len(SPINNER_FRAMES)]
         if pstate:
@@ -630,7 +636,6 @@ class TwitchApp(App[None]):
                 style=pal.fg_muted,
             )
 
-        # Line 7: Status Banner / Login Code Banner
         if self.status_banner:
             info.append(f"✨ {self.status_banner}", style="bold #ff79c6")
 
@@ -1069,17 +1074,20 @@ class TwitchApp(App[None]):
             self.action_start_browser_login()
             return
         inp = self.query_one("#chat-input", Input)
+        inp.disabled = False
         inp.add_class("visible")
         inp.focus()
 
     def action_open_search(self) -> None:
         inp = self.query_one("#search-input", Input)
+        inp.disabled = False
         inp.add_class("visible")
         inp.value = ""
         inp.focus()
 
     def action_open_auth(self) -> None:
         inp = self.query_one("#auth-input", Input)
+        inp.disabled = False
         inp.add_class("visible")
         inp.value = ""
         inp.focus()
@@ -1106,7 +1114,6 @@ class TwitchApp(App[None]):
         interval = max(3, int(dev.get("interval") or 5))
         full_url = f"{verify_uri}?public=true&device-code={user_code}"
 
-        # Copy code to Wayland clipboard if wl-copy is available
         wl_copy = shutil.which("wl-copy")
         if wl_copy:
             try:
@@ -1129,7 +1136,6 @@ class TwitchApp(App[None]):
             timeout=12,
         )
 
-        # Poll for up to 3 minutes
         deadline = time.time() + 180
         while time.time() < deadline and self.device_login_code == user_code:
             time.sleep(interval)
@@ -1182,6 +1188,7 @@ class TwitchApp(App[None]):
                 inp = self.query_one(sel, Input)
                 if inp.has_class("visible"):
                     inp.remove_class("visible")
+                    inp.disabled = True
                     self.set_focus(None)
                     return
             except Exception:
@@ -1196,6 +1203,7 @@ class TwitchApp(App[None]):
         inp_id = event.input.id
         val = event.value.strip()
         event.input.remove_class("visible")
+        event.input.disabled = True
         self.set_focus(None)
 
         if inp_id == "search-input" and val:

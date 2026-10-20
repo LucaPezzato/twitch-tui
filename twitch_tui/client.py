@@ -246,34 +246,82 @@ class StreamPlayer:
         hyprctl = shutil.which("hyprctl")
         if hyprctl:
             try:
-                clients_raw = subprocess.check_output(
-                    [hyprctl, "clients", "-j"], timeout=1.5
-                ).decode("utf-8", errors="ignore")
-                clients = json.loads(clients_raw)
-                mpv_client = next((c for c in clients if c.get("pid") == mpv_pid), None)
-                if mpv_client:
-                    addr = mpv_client.get("address")
-                    is_floating = bool(mpv_client.get("floating"))
-                    is_pinned = bool(mpv_client.get("pinned"))
-                    target = f"address:{addr}"
-                    if enable_pip:
-                        if not is_floating:
-                            subprocess.run([hyprctl, "dispatch", "togglefloating", target], timeout=1.0)
+                target = f"pid:{mpv_pid}"
+                if enable_pip:
+                    mon_raw = subprocess.check_output(
+                        [hyprctl, "monitors", "-j"], timeout=1.5
+                    ).decode("utf-8", errors="ignore")
+                    monitors = json.loads(mon_raw)
+                    mon = next((m for m in monitors if m.get("focused")), monitors[0] if monitors else None)
+                    subprocess.run(
+                        [
+                            hyprctl,
+                            "eval",
+                            f"hl.dispatch(hl.dsp.window.float({{ action = 'enable', window = '{target}' }}))",
+                        ],
+                        timeout=1.0,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    subprocess.run(
+                        [
+                            hyprctl,
+                            "eval",
+                            f"hl.dispatch(hl.dsp.window.resize({{ x = 480, y = 270, relative = false, window = '{target}' }}))",
+                        ],
+                        timeout=1.0,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if mon:
+                        scale = float(mon.get("scale") or 1.0)
+                        mx = int(mon.get("x") or 0)
+                        my = int(mon.get("y") or 0)
+                        mw = int(round(float(mon.get("width") or 1920) / scale))
+                        mh = int(round(float(mon.get("height") or 1080) / scale))
+                        tx = mx + mw - 480 - 20
+                        ty = my + mh - 270 - 25
                         subprocess.run(
-                            [hyprctl, "dispatch", "resizewindowpixel", f"exact 480 270,{target}"],
+                            [
+                                hyprctl,
+                                "eval",
+                                f"hl.dispatch(hl.dsp.window.move({{ x = {tx}, y = {ty}, relative = false, window = '{target}' }}))",
+                            ],
                             timeout=1.0,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                         )
-                        subprocess.run(
-                            [hyprctl, "dispatch", "movewindowpixel", f"exact 100%-500 100%-295,{target}"],
-                            timeout=1.0,
-                        )
-                        if not is_pinned:
-                            subprocess.run([hyprctl, "dispatch", "pin", target], timeout=1.0)
-                    else:
-                        if is_pinned:
-                            subprocess.run([hyprctl, "dispatch", "pin", target], timeout=1.0)
-                        if is_floating:
-                            subprocess.run([hyprctl, "dispatch", "togglefloating", target], timeout=1.0)
+                    subprocess.run(
+                        [
+                            hyprctl,
+                            "eval",
+                            f"hl.dispatch(hl.dsp.window.pin({{ action = 'enable', window = '{target}' }}))",
+                        ],
+                        timeout=1.0,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    subprocess.run(
+                        [
+                            hyprctl,
+                            "eval",
+                            f"hl.dispatch(hl.dsp.window.pin({{ action = 'disable', window = '{target}' }}))",
+                        ],
+                        timeout=1.0,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    subprocess.run(
+                        [
+                            hyprctl,
+                            "eval",
+                            f"hl.dispatch(hl.dsp.window.float({{ action = 'disable', window = '{target}' }}))",
+                        ],
+                        timeout=1.0,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             except Exception:
                 pass
         return True
