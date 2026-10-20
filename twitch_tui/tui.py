@@ -278,6 +278,7 @@ class TwitchApp(App[None]):
         self.set_interval(45.0, self._periodic_live_refresh)
 
     def on_unmount(self) -> None:
+        self.device_login_code = ""
         self.chat.stop()
 
     def _set_banner(self, msg: str, duration: float = 6.0) -> None:
@@ -543,7 +544,9 @@ class TwitchApp(App[None]):
         else:
             t.append("[p] ⧉ PiP: OFF", style=pal.fg_muted)
         t.append("  ")
-        if self.client.username:
+        if self.device_login_code:
+            t.append(f" 🔑 CODICE: {self.device_login_code} ", style="bold #1e1f29 on #f1fa8c")
+        elif self.client.username:
             t.append(f"[u] ● @{self.client.username}", style="bold #50fa7b")
         else:
             t.append("[u] 🔑 Login", style="bold #ffb86c")
@@ -584,7 +587,7 @@ class TwitchApp(App[None]):
                 info.append(f"   •   👥 {_fmt_num(item.followers_count)} followers", style=pal.fg_muted)
             info.append("\n")
 
-            title_str = item.title or item.description or "No broadcast title"
+            title_str = " ".join((item.title or item.description or "No broadcast title").split())
             info.append(f"{_truncate(title_str, 74)}\n", style=pal.fg)
             if len(title_str) > 74:
                 info.append(f"{_truncate(title_str[74:], 74)}\n", style=pal.fg_muted)
@@ -1117,18 +1120,33 @@ class TwitchApp(App[None]):
         wl_copy = shutil.which("wl-copy")
         if wl_copy:
             try:
-                subprocess.run([wl_copy, user_code], timeout=1.5)
+                subprocess.Popen(
+                    [wl_copy, user_code],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
             except Exception:
                 pass
 
+        xdg_open = shutil.which("xdg-open")
         try:
-            webbrowser.open(full_url)
+            if xdg_open:
+                subprocess.Popen(
+                    [xdg_open, full_url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            else:
+                webbrowser.open(full_url)
         except Exception:
             pass
 
         self.device_login_code = user_code
         msg = f"🔑 CODICE TWITCH: {user_code} (copiato negli appunti! Conferma nel browser aperto…)"
         self.call_from_thread(self._set_banner, msg, 120.0)
+        self.call_from_thread(self._render_top_bar)
         self.call_from_thread(
             self.notify,
             f"Codice: {user_code} (già copiato negli appunti).\nPremi 'Attiva / Autorizza' nella pagina aperta nel browser!",
@@ -1234,11 +1252,20 @@ class TwitchApp(App[None]):
 
     def action_open_browser(self) -> None:
         item = self._selected_item()
+        xdg_open = shutil.which("xdg-open")
         if isinstance(item, ChannelInfo):
-            webbrowser.open(f"https://www.twitch.tv/{item.login}")
+            url = f"https://www.twitch.tv/{item.login}"
+            if xdg_open:
+                subprocess.Popen([xdg_open, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            else:
+                webbrowser.open(url)
             self._set_banner(f"🌐 Aperto twitch.tv/{item.login} nel browser")
         elif isinstance(item, VodInfo):
-            webbrowser.open(f"https://www.twitch.tv/videos/{item.id}")
+            url = f"https://www.twitch.tv/videos/{item.id}"
+            if xdg_open:
+                subprocess.Popen([xdg_open, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            else:
+                webbrowser.open(url)
             self._set_banner("🌐 Aperto VOD nel browser")
 
     def action_refresh_data(self) -> None:

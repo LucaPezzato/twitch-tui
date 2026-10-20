@@ -169,8 +169,21 @@ def main(argv: list[str] | None = None) -> int:
         interval = max(3, int(dev.get("interval") or 5))
         full_url = f"{verify_uri}?public=true&device-code={user_code}"
         if shutil.which("wl-copy"):
-            subprocess.run(["wl-copy", user_code], timeout=1.5)
-        webbrowser.open(full_url)
+            subprocess.Popen(
+                ["wl-copy", user_code],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        if shutil.which("xdg-open"):
+            subprocess.Popen(
+                ["xdg-open", full_url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        else:
+            webbrowser.open(full_url)
         print(f"🔑 Twitch Activation Code: {user_code} (copied to clipboard!)")
         print(f"🌐 Opened {full_url} — click 'Activate / Authorize' in your browser…")
         deadline = time.time() + 180
