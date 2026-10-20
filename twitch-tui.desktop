@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Twitch TUI
+GenericName=Twitch Stream Player & Chat
+Comment=Lightweight Terminal UI, Live Chat, and MPV/Streamlink Player for Twitch
+Exec=kitty --title twitch -e /home/pez/.local/bin/twitch-tui
+Icon=/home/pez/.local/share/icons/twitch-tui.svg
+Terminal=false
+Categories=AudioVideo;Video;Network;Player;
+Keywords=twitch;stream;live;mpv;chat;tui;
+StartupWMClass=kitty

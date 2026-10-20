@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twitch-tui"
+version = "0.1.0"
+description = "Lightweight Truecolor Terminal UI (TUI), Live IRC Chat, Streamlink/MPV controller, and Waybar widget for Twitch"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "LucaPezzato", email = "luca@pezzato.dev" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=0.80.0",
+    "rich>=13.0.0",
+    "Pillow>=10.0.0",
+]
+
+[project.scripts]
+twitch-tui = "twitch_tui.cli:main"
