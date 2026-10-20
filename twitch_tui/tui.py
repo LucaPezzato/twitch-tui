@@ -178,8 +178,6 @@ class TwitchApp(App[None]):
         Binding("w", "watch_selected", "Watch MPV", show=False),
         Binding("a", "listen_audio", "Audio-Only", show=False),
         Binding("x", "stop_stream", "Stop MPV", show=False),
-        Binding("p", "toggle_pip", "Toggle PiP", show=False),
-        Binding("P", "toggle_pip", "Toggle PiP", show=False),
         Binding("v", "cycle_quality", "Quality", show=False),
         Binding("V", "cycle_quality", "Quality", show=False),
         Binding("f", "toggle_follow", "Follow/Unfollow", show=False),
@@ -539,11 +537,6 @@ class TwitchApp(App[None]):
         t.append(" │ ", style=pal.fg_muted)
         t.append(f"[v] 🎞 {self.client.quality}", style=f"bold {pal.primary}")
         t.append("  ")
-        if self.client.pip:
-            t.append(" [p] ⧉ PiP: ON ", style="bold #1e1f29 on #50fa7b")
-        else:
-            t.append("[p] ⧉ PiP: OFF", style=pal.fg_muted)
-        t.append("  ")
         if self.device_login_code:
             t.append(f" 🔑 CODICE: {self.device_login_code} ", style="bold #1e1f29 on #f1fa8c")
         elif self.client.username:
@@ -617,10 +610,9 @@ class TwitchApp(App[None]):
         if pstate:
             ch_label = pstate.get("title") or pstate.get("channel") or "Stream"
             qual = pstate.get("quality", "best")
-            pip_tag = " • PiP" if pstate.get("pip") else ""
             if pstate.get("starting"):
                 info.append(
-                    f" {spinner} AVVIO MPV IN CORSO: {_truncate(str(ch_label), 32)} [{qual}{pip_tag}] ",
+                    f" {spinner} AVVIO MPV IN CORSO: {_truncate(str(ch_label), 34)} [{qual}] ",
                     style="bold #1e1f29 on #ffb86c",
                 )
                 info.append("  ([x] Annulla)\n", style=pal.fg_muted)
@@ -629,13 +621,13 @@ class TwitchApp(App[None]):
                 vol = pstate.get("volume", 100)
                 mute_tag = " 🔇 Muto" if pstate.get("muted") else f" 🔊 {vol}%"
                 info.append(
-                    f" {icon}: {_truncate(str(ch_label), 28)} [{qual}{pip_tag}]{mute_tag} ",
+                    f" {icon}: {_truncate(str(ch_label), 30)} [{qual}]{mute_tag} ",
                     style="bold #1e1f29 on #50fa7b",
                 )
-                info.append("  ([Space] Pausa [p] PiP [x] Stop)\n", style=pal.fg_muted)
+                info.append("  ([Space] Pausa [m] Muto [x] Stop)\n", style=pal.fg_muted)
         else:
             info.append(
-                "⏹ Player inattivo — [Invio/w] Apri su MPV  [p] Attiva PiP  [a] Solo Audio  [u] Login Twitch\n",
+                "⏹ Player inattivo — [Invio/w] Apri su MPV  [a] Solo Audio  [v] Qualità  [u] Login Twitch\n",
                 style=pal.fg_muted,
             )
 
@@ -809,7 +801,6 @@ class TwitchApp(App[None]):
         h = Text()
         keys = [
             ("Invio/w", "Guarda"),
-            ("p", "PiP"),
             ("v", "Qualità"),
             ("a", "Audio"),
             ("u", "Login Twitch"),
@@ -945,7 +936,6 @@ class TwitchApp(App[None]):
                 channel_or_url=item.login,
                 title=f"{item.display_name} — {item.game_name}",
                 quality=self.client.quality,
-                pip=self.client.pip,
                 low_latency=bool(self.client.config.get("low_latency", True)),
                 oauth_token=self.client.oauth_token,
             )
@@ -961,7 +951,6 @@ class TwitchApp(App[None]):
                 channel_or_url=vod_url,
                 title=f"[VOD] {item.channel_name}: {item.title}",
                 quality=self.client.quality,
-                pip=self.client.pip,
                 low_latency=False,
                 oauth_token=self.client.oauth_token,
             )
@@ -979,7 +968,6 @@ class TwitchApp(App[None]):
                 channel_or_url=item.login,
                 title=f"{item.display_name} (Audio)",
                 quality="audio_only",
-                pip=False,
                 low_latency=True,
                 oauth_token=self.client.oauth_token,
             )
@@ -994,7 +982,6 @@ class TwitchApp(App[None]):
                 channel_or_url=vod_url,
                 title=f"[VOD Audio] {item.channel_name}",
                 quality="audio_only",
-                pip=False,
                 low_latency=False,
                 oauth_token=self.client.oauth_token,
             )
@@ -1010,14 +997,6 @@ class TwitchApp(App[None]):
         self.notify("Stream MPV chiuso.", title="Twitch Player", timeout=2)
         self._render_hero()
         self._render_list()
-
-    def action_toggle_pip(self) -> None:
-        state = self.client.toggle_pip()
-        status_txt = "ATTIVO (finestra flottante fissata in basso a destra)" if state else "DISATTIVO (finestra normale)"
-        self._set_banner(f"⧉ Picture-in-Picture: {status_txt}")
-        self.notify(f"Picture-in-Picture: {status_txt}", title="Modalità PiP [p]", timeout=3)
-        self._render_top_bar()
-        self._render_hero()
 
     def action_cycle_quality(self) -> None:
         q = self.client.cycle_quality()

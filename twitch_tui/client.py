@@ -194,7 +194,6 @@ class StreamPlayer:
             "login": "",
             "title": "",
             "quality": "best",
-            "pip": False,
             "audio_only": False,
             "paused": False,
             "muted": False,
@@ -225,106 +224,6 @@ class StreamPlayer:
                     pass
 
         return info
-
-    def apply_live_pip(self, enable_pip: bool) -> bool:
-        """Applies or removes PiP geometry/pinning on an already-running MPV window via IPC + hyprctl."""
-        mpv_pid = self.get_mpv_pid()
-        if not mpv_pid:
-            return False
-
-        self._send_mpv_ipc(["set_property", "ontop", enable_pip])
-        self._send_mpv_ipc(["set_property", "border", not enable_pip])
-
-        if PLAYER_STATE_PATH.exists():
-            try:
-                st = json.loads(PLAYER_STATE_PATH.read_text(encoding="utf-8"))
-                st["pip"] = enable_pip
-                PLAYER_STATE_PATH.write_text(json.dumps(st), encoding="utf-8")
-            except Exception:
-                pass
-
-        hyprctl = shutil.which("hyprctl")
-        if hyprctl:
-            try:
-                target = f"pid:{mpv_pid}"
-                if enable_pip:
-                    mon_raw = subprocess.check_output(
-                        [hyprctl, "monitors", "-j"], timeout=1.5
-                    ).decode("utf-8", errors="ignore")
-                    monitors = json.loads(mon_raw)
-                    mon = next((m for m in monitors if m.get("focused")), monitors[0] if monitors else None)
-                    subprocess.run(
-                        [
-                            hyprctl,
-                            "eval",
-                            f"hl.dispatch(hl.dsp.window.float({{ action = 'enable', window = '{target}' }}))",
-                        ],
-                        timeout=1.0,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    subprocess.run(
-                        [
-                            hyprctl,
-                            "eval",
-                            f"hl.dispatch(hl.dsp.window.resize({{ x = 480, y = 270, relative = false, window = '{target}' }}))",
-                        ],
-                        timeout=1.0,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    if mon:
-                        scale = float(mon.get("scale") or 1.0)
-                        mx = int(mon.get("x") or 0)
-                        my = int(mon.get("y") or 0)
-                        mw = int(round(float(mon.get("width") or 1920) / scale))
-                        mh = int(round(float(mon.get("height") or 1080) / scale))
-                        tx = mx + mw - 480 - 20
-                        ty = my + mh - 270 - 25
-                        subprocess.run(
-                            [
-                                hyprctl,
-                                "eval",
-                                f"hl.dispatch(hl.dsp.window.move({{ x = {tx}, y = {ty}, relative = false, window = '{target}' }}))",
-                            ],
-                            timeout=1.0,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                    subprocess.run(
-                        [
-                            hyprctl,
-                            "eval",
-                            f"hl.dispatch(hl.dsp.window.pin({{ action = 'enable', window = '{target}' }}))",
-                        ],
-                        timeout=1.0,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                else:
-                    subprocess.run(
-                        [
-                            hyprctl,
-                            "eval",
-                            f"hl.dispatch(hl.dsp.window.pin({{ action = 'disable', window = '{target}' }}))",
-                        ],
-                        timeout=1.0,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    subprocess.run(
-                        [
-                            hyprctl,
-                            "eval",
-                            f"hl.dispatch(hl.dsp.window.float({{ action = 'disable', window = '{target}' }}))",
-                        ],
-                        timeout=1.0,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-            except Exception:
-                pass
-        return True
 
     def stop(self) -> None:
         self._send_mpv_ipc(["quit"])
@@ -366,7 +265,6 @@ class StreamPlayer:
         channel_or_url: str,
         title: str = "",
         quality: str = "best",
-        pip: bool = False,
         low_latency: bool = True,
         oauth_token: str = "",
     ) -> tuple[bool, str]:
@@ -382,26 +280,17 @@ class StreamPlayer:
             label = title or login
 
         audio_only = quality == "audio_only"
-        app_id = "twitch-pip" if pip else "twitch-mpv"
-        win_title = "twitch-pip" if pip else f"Twitch: {label}"
+        win_title = f"Twitch: {label}"
 
         mpv_args = [
             f"--input-ipc-server={MPV_SOCKET_PATH}",
-            f"--wayland-app-id={app_id}",
+            "--wayland-app-id=twitch-mpv",
             f"--title={win_title}",
             f"--force-media-title={label}",
             "--really-quiet",
         ]
         if audio_only:
             mpv_args.extend(["--no-video", "--force-window=no"])
-        elif pip:
-            mpv_args.extend(
-                [
-                    "--ontop",
-                    "--no-border",
-                    "--geometry=480x270-20-25",
-                ]
-            )
 
         streamlink_bin = shutil.which("streamlink")
         mpv_bin = shutil.which("mpv")
@@ -436,12 +325,11 @@ class StreamPlayer:
                 "login": login,
                 "title": label,
                 "quality": quality,
-                "pip": pip,
                 "audio_only": audio_only,
                 "started_at": time.time(),
             }
             PLAYER_STATE_PATH.write_text(json.dumps(state_data), encoding="utf-8")
-            mode_tag = "Solo Audio" if audio_only else ("PiP" if pip else quality)
+            mode_tag = "Solo Audio" if audio_only else quality
             return True, f"⏳ Connessione a {label} [{mode_tag}] su MPV (2-3s)…"
         except Exception as exc:
             return False, f"Errore avvio MPV: {exc}"
@@ -462,7 +350,6 @@ class TwitchClient:
             "user_id": "",
             "username": "",
             "quality": "best",
-            "pip": False,
             "low_latency": True,
             "notifications": True,
             "dynamic_theme": True,
@@ -515,20 +402,6 @@ class TwitchClient:
         nxt = QUALITY_OPTIONS[(idx + 1) % len(QUALITY_OPTIONS)]
         self.quality = nxt
         return nxt
-
-    @property
-    def pip(self) -> bool:
-        return bool(self.config.get("pip", False))
-
-    @pip.setter
-    def pip(self, value: bool) -> None:
-        self.config["pip"] = bool(value)
-        self.save_config()
-
-    def toggle_pip(self) -> bool:
-        self.pip = not self.pip
-        self.player.apply_live_pip(self.pip)
-        return self.pip
 
     @property
     def oauth_token(self) -> str:

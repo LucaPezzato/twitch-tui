@@ -74,7 +74,6 @@ def main(argv: list[str] | None = None) -> int:
     w_p = sub.add_parser("watch", help="Watch a channel or VOD URL in MPV via Streamlink")
     w_p.add_argument("channel", help="Channel login or Twitch URL")
     w_p.add_argument("-q", "--quality", choices=QUALITY_OPTIONS, default=None, help="Stream quality")
-    w_p.add_argument("--pip", action="store_true", help="Open in Picture-in-Picture mode")
     w_p.add_argument("--audio-only", action="store_true", help="Listen to audio only in background")
 
     f_p = sub.add_parser("follow", help="Add a channel to followed list")
@@ -107,12 +106,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if cmd == "watch":
         qual = "audio_only" if args.audio_only else (args.quality or client.quality)
-        pip = True if args.pip else client.pip
         ok, msg = client.player.watch_stream(
             channel_or_url=args.channel,
             title=args.channel,
             quality=qual,
-            pip=pip,
             low_latency=bool(client.config.get("low_latency", True)),
             oauth_token=client.oauth_token,
         )

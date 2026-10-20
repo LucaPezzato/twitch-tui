@@ -27,10 +27,10 @@ Built with **Python**, **Textual**, **Rich**, and **Pillow**, matching the Dracu
 - **16:9 Truecolor Live Previews & Dynamic Themes**:
   - Renders live stream thumbnails, channel avatars, and category box art using 24-bit Unicode half-blocks (`▀`).
   - Toggle between **Dracula Twitch** and **Dynamic Stream Artwork** ambient palette with `t`.
-- **Streamlink + MPV with IPC Control & Picture-in-Picture (PiP)**:
+- **Streamlink + MPV with IPC Control**:
   - Launches streams in `mpv` via `streamlink` with `--twitch-low-latency` and `--twitch-disable-ads`.
   - Switch quality on the fly (`v`: `best`, `1080p60`, `720p60`, `480p`, `360p`, `audio_only`).
-  - Toggle **Picture-in-Picture (PiP)** mode (`p`) or **Audio-Only** background mode (`a`).
+  - Listen in **Audio-Only** background mode (`a`).
   - Control active MPV playback directly from the TUI (`Space` pause/resume, `m` mute, `+`/`-` volume, `x` stop).
 - **Integrated Live Twitch Chat (IRCv3 over TLS)**:
   - Side-by-side real-time chat with user colors, subscriber/mod/VIP/broadcaster badges (`📺`, `⚔`, `💎`, `★`, `👑`), system raid/sub alerts, and lurk mode (`l`).
@@ -47,7 +47,6 @@ Built with **Python**, **Textual**, **Rich**, and **Pillow**, matching the Dracu
 | `j` / `k` or `↓` / `↑` | Navigate list (`g` top, `G` bottom) |
 | `Enter` / `w` | Watch selected stream/VOD in MPV (and join chat) |
 | `a` | Listen in **Audio-Only** background mode |
-| `p` | Toggle **Picture-in-Picture (PiP)** mode |
 | `v` | Cycle stream quality (`best`, `1080p60`, `720p60`, `480p`, `360p`, `audio_only`) |
 | `f` | Follow / Unfollow selected channel |
 | `l` | Join / Lurk live chat of selected channel without opening video |
@@ -72,8 +71,8 @@ twitch-tui
 # Output Waybar JSON status (and trigger live notifications)
 twitch-tui waybar
 
-# Watch a channel directly in MPV (with optional quality or PiP)
-twitch-tui watch shroud --quality 1080p60 --pip
+# Watch a channel directly in MPV
+twitch-tui watch shroud --quality 1080p60
 
 # Follow / Unfollow channels from CLI
 twitch-tui follow dario_moccia_twitch
