@@ -5,10 +5,12 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -122,11 +124,13 @@ class VodInfo:
 
 
 class StreamPlayer:
-    """Manages Streamlink + MPV playback with UNIX socket IPC control and live PiP switching."""
+    """Manages Streamlink + MPV playback with UNIX socket IPC control and live Ad-Break detection."""
 
     def __init__(self) -> None:
         self._proc: subprocess.Popen[Any] | None = None
         self._last_error: str = ""
+        self._ad_until: float = 0.0
+        self._in_preroll: bool = False
 
     def _send_mpv_ipc(self, command: list[Any]) -> dict[str, Any] | None:
         if not MPV_SOCKET_PATH.exists():
@@ -168,20 +172,20 @@ class StreamPlayer:
     def pop_last_error(self) -> str:
         if self._proc and self._proc.poll() is not None and self._proc.returncode != 0:
             if not self.is_mpv_ready():
-                try:
-                    stderr_out = ""
-                    if self._proc.stderr:
-                        stderr_out = self._proc.stderr.read().decode("utf-8", errors="ignore").strip()
-                    self._proc = None
-                    if stderr_out:
-                        last_line = [ln.strip() for ln in stderr_out.splitlines() if ln.strip()][-1]
-                        return last_line
-                    return "Streamlink exited unexpectedly."
-                except Exception:
-                    self._proc = None
+                self._proc = None
+                err = self._last_error or "Streamlink terminato inaspettatamente."
+                self._last_error = ""
+                return err
         err = self._last_error
         self._last_error = ""
         return err
+
+    def get_ad_remaining(self) -> int:
+        rem = int(round(self._ad_until - time.time()))
+        if rem > 0:
+            return rem
+        self._in_preroll = False
+        return 0
 
     def get_state(self) -> dict[str, Any] | None:
         mpv_ready = self.is_mpv_ready()
@@ -189,6 +193,7 @@ class StreamPlayer:
         if not mpv_ready and not proc_alive:
             return None
 
+        ad_rem = self.get_ad_remaining()
         info: dict[str, Any] = {
             "channel": "",
             "login": "",
@@ -199,11 +204,13 @@ class StreamPlayer:
             "muted": False,
             "volume": 100,
             "starting": not mpv_ready,
+            "ad_remaining": ad_rem,
         }
         if PLAYER_STATE_PATH.exists():
             try:
                 info.update(json.loads(PLAYER_STATE_PATH.read_text(encoding="utf-8")))
                 info["starting"] = not mpv_ready
+                info["ad_remaining"] = ad_rem
             except Exception:
                 pass
 
@@ -226,6 +233,8 @@ class StreamPlayer:
         return info
 
     def stop(self) -> None:
+        self._ad_until = 0.0
+        self._in_preroll = False
         self._send_mpv_ipc(["quit"])
         if self._proc and self._proc.poll() is None:
             try:
@@ -291,6 +300,15 @@ class StreamPlayer:
         ]
         if audio_only:
             mpv_args.extend(["--no-video", "--force-window=no"])
+        else:
+            mpv_args.extend(
+                [
+                    "--force-window=immediate",
+                    "--keep-open=yes",
+                    "--cache=yes",
+                    "--demuxer-max-bytes=64MiB",
+                ]
+            )
 
         streamlink_bin = shutil.which("streamlink")
         mpv_bin = shutil.which("mpv")
@@ -307,6 +325,7 @@ class StreamPlayer:
                 "--player-args",
                 shlex.join(mpv_args),
                 "--twitch-disable-ads",
+                "--hls-segment-queue-threshold=0",
             ]
             if low_latency and "/videos/" not in url:
                 cmd.append("--twitch-low-latency")
@@ -314,12 +333,21 @@ class StreamPlayer:
             cmd = [mpv_bin, *mpv_args, url]
 
         try:
+            self._ad_until = 0.0
+            self._in_preroll = False
             self._proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 start_new_session=True,
+                text=True,
+                bufsize=1,
             )
+            threading.Thread(
+                target=self._monitor_streamlink_output,
+                args=(self._proc,),
+                daemon=True,
+            ).start()
             state_data = {
                 "channel": channel_or_url,
                 "login": login,
@@ -330,9 +358,45 @@ class StreamPlayer:
             }
             PLAYER_STATE_PATH.write_text(json.dumps(state_data), encoding="utf-8")
             mode_tag = "Solo Audio" if audio_only else quality
-            return True, f"⏳ Connessione a {label} [{mode_tag}] su MPV (2-3s)…"
+            return True, f"⏳ Connessione a {label} [{mode_tag}] su MPV…"
         except Exception as exc:
             return False, f"Errore avvio MPV: {exc}"
+
+    def _monitor_streamlink_output(self, proc: subprocess.Popen[Any]) -> None:
+        """Reads Streamlink logs in background to detect Twitch Ad breaks and show OSD/TUI countdowns."""
+        if not proc.stdout:
+            return
+        try:
+            for raw_line in proc.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if "Waiting for pre-roll ads to finish" in line:
+                    self._in_preroll = True
+                    if self._ad_until < time.time() + 5:
+                        self._ad_until = time.time() + 20
+                    self._send_mpv_ipc(
+                        [
+                            "show-text",
+                            "📺 Pubblicità iniziale Twitch in corso — Streamlink sta saltando lo spot, lo stream partirà a breve...",
+                            20000,
+                        ]
+                    )
+                elif "Detected advertisement break of " in line:
+                    m = re.search(r"Detected advertisement break of (\d+) second", line)
+                    secs = int(m.group(1)) if m else 30
+                    self._ad_until = time.time() + secs
+                    self._send_mpv_ipc(
+                        [
+                            "show-text",
+                            f"📺 Pausa pubblicitaria Twitch ({secs}s) — Streamlink sta filtrando l'AD, ripresa automatica...",
+                            secs * 1000,
+                        ]
+                    )
+                elif line.startswith("error:"):
+                    self._last_error = line
+        except Exception:
+            pass
 
 
 class TwitchClient:

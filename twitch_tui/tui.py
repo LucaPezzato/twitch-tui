@@ -302,6 +302,7 @@ class TwitchApp(App[None]):
 
         pstate = self.client.player.get_state()
         is_starting = bool(pstate and pstate.get("starting"))
+        has_ad = bool(pstate and int(pstate.get("ad_remaining") or 0) > 0)
 
         if self._was_starting_mpv and pstate and not is_starting:
             self._was_starting_mpv = False
@@ -313,10 +314,10 @@ class TwitchApp(App[None]):
         if self.status_banner and not self.device_login_code and (time.time() - self.status_banner_ts > 6.0):
             self.status_banner = ""
 
-        if is_starting or self._spinner_idx % 4 == 0:
+        if is_starting or has_ad or self._spinner_idx % 4 == 0:
             self._render_top_bar()
             self._render_hero()
-            if is_starting:
+            if is_starting or has_ad or self._spinner_idx % 4 == 0:
                 self._render_list()
 
     def _periodic_live_refresh(self) -> None:
@@ -610,7 +611,14 @@ class TwitchApp(App[None]):
         if pstate:
             ch_label = pstate.get("title") or pstate.get("channel") or "Stream"
             qual = pstate.get("quality", "best")
-            if pstate.get("starting"):
+            ad_rem = int(pstate.get("ad_remaining") or 0)
+            if ad_rem > 0:
+                info.append(
+                    f" {spinner} 📺 AD TWITCH ({ad_rem}s) — Streamlink sta saltando lo spot in silenzio… ",
+                    style="bold #1e1f29 on #f1fa8c",
+                )
+                info.append("  ([x] Stop)\n", style=pal.fg_muted)
+            elif pstate.get("starting"):
                 info.append(
                     f" {spinner} AVVIO MPV IN CORSO: {_truncate(str(ch_label), 34)} [{qual}] ",
                     style="bold #1e1f29 on #ffb86c",
@@ -687,6 +695,7 @@ class TwitchApp(App[None]):
         pstate = self.client.player.get_state()
         active_login = str((pstate or {}).get("login") or "").lower()
         is_starting = bool(pstate and pstate.get("starting"))
+        ad_rem = int((pstate or {}).get("ad_remaining") or 0)
         spinner = SPINNER_FRAMES[self._spinner_idx % len(SPINNER_FRAMES)]
 
         total = len(items)
@@ -712,7 +721,9 @@ class TwitchApp(App[None]):
                 view.append(name_str, style=name_style)
 
                 if item.login == active_login:
-                    if is_starting:
+                    if ad_rem > 0:
+                        view.append(f" {spinner} 📺 AD ({ad_rem}s) ", style="bold #1e1f29 on #f1fa8c")
+                    elif is_starting:
                         view.append(f" {spinner} Avvio MPV… ", style="bold #1e1f29 on #ffb86c")
                     else:
                         view.append(" ▶ SU MPV ", style="bold #1e1f29 on #50fa7b")
